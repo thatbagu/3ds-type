@@ -1,16 +1,9 @@
 {
   # amonite task — encapsulated environment for one unit of work.
-  #
-  # The agent implementing this task works inside `nix develop ./tasks/TXXX`
-  # and sees ONLY the toolchain granted in task.nix. The same task.nix is
-  # imported by the project flake for aggregate verification, so this flake
-  # is a development capsule, not a fork of truth.
   description = "amonite task capsule";
 
   inputs = {
-    # nixpkgs is not pinned here — it follows the meta flake's pin
-    # transitively: project nixpkgs → amonite/nixpkgs → this capsule.
-    amonite.url = "path:/home/egor/Code/amonite";
+    amonite.url = "github:Amonite-AI/amonite";
     nixpkgs.follows = "amonite/nixpkgs";
   };
 
@@ -25,7 +18,6 @@
       checks = forAllSystems (pkgs: { task = task pkgs; });
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          # The capsule: exactly the packages the task derivation grants.
           packages = (task pkgs).nativeBuildInputs or [ ];
         };
       });
