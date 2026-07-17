@@ -1,8 +1,10 @@
 #include <3ds.h>
 #include <citro2d.h>
-#include <cstdio>
+#include <cstdint>
+#include "chord_decoder.h"
 #include "text_buffer.h"
 #include "typewriter_renderer.h"
+#include "hid_poller.h"
 
 int main(int argc, char* argv[]) {
     gfxInitDefault();
@@ -17,8 +19,8 @@ int main(int argc, char* argv[]) {
         hidScanInput();
         u32 kDown = hidKeysDown();
         if (kDown & KEY_START) break;
-        // Rendering in T011
-        C2D_Flush();
+        process_hid_frame(kDown, buffer);
+        renderer.render(buffer.getLines(), 0, false);
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
