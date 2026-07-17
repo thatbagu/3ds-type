@@ -23,10 +23,10 @@ let
     id = "C002";
     title = "Android Keyboard Service";
     tasks = with tasks; [ T002 T003 ];
-    env = [ pkgs.coreutils ];
+    env = [ pkgs.coreutils pkgs.jdk17 ];
     verify = {
       apk-present = ''
-        test -f "$out/tasks/T003/app-debug.apk"
+        test -f "$out/tasks/T002/app-debug.apk"
       '';
       encoder-roundtrip = ''
         "$out/tasks/T003/bin/run-tests" ChordEncoderTest.roundTrip
@@ -38,7 +38,7 @@ let
     id = "C003";
     title = "Android Settings and Draft Storage";
     tasks = with tasks; [ T004 T005 T006 ];
-    env = [ pkgs.coreutils ];
+    env = [ pkgs.coreutils pkgs.jdk17 ];
     verify = {
       apk-present = ''
         test -f "$out/tasks/T006/app-debug.apk"
