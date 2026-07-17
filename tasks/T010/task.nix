@@ -1,11 +1,15 @@
 # T010: 3DS TypewriterRenderer (citro2d)
 # Implements the visual layer: top screen renders TextBuffer lines as
-# off-white text on near-black background with a blinking block cursor;
-# bottom screen shows the single status line (word count / connection
-# state / save hint). Uses citro2d; no consoleInit.
+# off-white text on near-black background; bottom screen shows status.
+# Uses citro2d; links citro2d + citro3d + ctru.
 # Verification is cross-compilation only — citro2d cannot run on host.
 # Depends: T007 (3DS scaffold), T009 (TextBuffer)
 { pkgs, amonite }:
+
+let
+  devkitARM = pkgs.devkitNix.devkitARM;
+  devkitPRO = "${devkitARM}/opt/devkitpro";
+in
 
 amonite.mkTask {
   id = "T010";
@@ -14,13 +18,25 @@ amonite.mkTask {
   src = ../..;
 
   env = with pkgs; [
-    gcc
+    devkitARM
     gnumake
+    bash
     xxd
     coreutils
   ];
 
-  build = ''echo "T010 not yet implemented" >&2 && exit 1'';
+  build = ''
+    export DEVKITPRO="${devkitPRO}"
+    export DEVKITARM="${devkitPRO}/devkitARM"
+    export CTRULIB="${devkitPRO}/libctru"
+    export PATH="$DEVKITARM/bin:${devkitPRO}/tools/bin:$PATH"
+    cp -r $src/3ds $TMPDIR/3ds
+    chmod -R u+w $TMPDIR/3ds
+    cd $TMPDIR/3ds
+    make SHELL=${pkgs.bash}/bin/bash
+    mkdir -p $out
+    cp typewriter.3dsx $out/typewriter.3dsx
+  '';
 
   verify = {
     cross-compile = ''

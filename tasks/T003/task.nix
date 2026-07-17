@@ -13,11 +13,33 @@ amonite.mkTask {
 
   env = with pkgs; [
     jdk17
-    gradle
+    bash
     coreutils
   ];
 
-  build = ''echo "T003 not yet implemented" >&2 && exit 1'';
+  build = ''
+    set -euo pipefail
+    WORK=$TMPDIR/t003
+    mkdir -p $WORK/classes $out/bin
+
+    # Compile all sources and tests together
+    javac -cp $WORK/classes \
+      -d $WORK/classes \
+      $src/android/src/dev/threedstype/app/ChordTable.java \
+      $src/android/src/dev/threedstype/app/ChordEncoder.java \
+      $src/android/src/dev/threedstype/app/HidUdpDispatcher.java \
+      $src/android/test/dev/threedstype/app/ChordEncoderTest.java \
+      $src/android/test/dev/threedstype/app/HidUdpDispatcherTest.java
+
+    cp -r $WORK/classes $out/classes
+
+    cat > $out/bin/run-tests << WRAPPER
+#!${pkgs.bash}/bin/bash
+IFS='.' read -r CLASS METHOD <<< "\$1"
+exec java -cp "\$(dirname "\$0")/../classes" "dev.threedstype.app.\$CLASS" "\$METHOD"
+WRAPPER
+    chmod +x $out/bin/run-tests
+  '';
 
   verify = {
     encoder-no-collision = ''

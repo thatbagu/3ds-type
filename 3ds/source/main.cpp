@@ -1,19 +1,29 @@
 #include <3ds.h>
+#include <citro2d.h>
 #include <cstdio>
+#include "text_buffer.h"
+#include "typewriter_renderer.h"
 
 int main(int argc, char* argv[]) {
     gfxInitDefault();
-    consoleInit(GFX_TOP, NULL);
-    printf("3DS Type\n");
-    printf("Waiting for keyboard...\n");
+    C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    C2D_Prepare();
+
+    TypewriterRenderer renderer;
+    renderer.init();
+    TextBuffer buffer;
+
     while (aptMainLoop()) {
         hidScanInput();
         u32 kDown = hidKeysDown();
         if (kDown & KEY_START) break;
-        gfxFlushBuffers();
+        // Rendering in T011
+        C2D_Flush();
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
+
+    C2D_Fini();
     gfxExit();
     return 0;
 }
