@@ -39,7 +39,7 @@ in amonite.mkTask {
 
   env = with pkgs; [
     androidSdk
-    jdk21
+    jdk17
     zip
     unzip
     coreutils
@@ -67,19 +67,25 @@ in amonite.mkTask {
       --manifest "$src/AndroidManifest.xml" \
       -o "$WORK/app-unsigned.apk"
 
-    # ── 3. Compile Java stub ─────────────────────────────────────────────────
+    # ── 3. Compile all Android-side sources ──────────────────────────────────
     javac \
       -source 8 -target 8 \
       -Xlint:-options \
       -cp "$PLATFORM/android.jar" \
       -d "$WORK/classes" \
+      "$src/src/dev/threedstype/app/ConnectionState.java" \
+      "$src/src/dev/threedstype/app/ChordTable.java" \
+      "$src/src/dev/threedstype/app/ChordEncoder.java" \
+      "$src/src/dev/threedstype/app/HidUdpDispatcher.java" \
+      "$src/src/dev/threedstype/app/SettingsActivity.java" \
       "$src/src/dev/threedstype/app/KeyboardCaptureService.java"
 
     # ── 4. Convert .class → .dex ─────────────────────────────────────────────
+    # Use find to capture anonymous/inner class files (e.g. ChordTable$1.class)
     java -cp "$BUILD_TOOLS/lib/d8.jar" com.android.tools.r8.D8 \
       --lib "$PLATFORM/android.jar" \
       --output "$WORK/dex" \
-      "$WORK/classes/dev/threedstype/app/KeyboardCaptureService.class"
+      $(find "$WORK/classes" -name "*.class")
 
     # ── 5. Add classes.dex to APK ────────────────────────────────────────────
     cp "$WORK/app-unsigned.apk" "$WORK/app-presigned.apk"
@@ -95,14 +101,15 @@ in amonite.mkTask {
       -keypass android \
       -dname "CN=Android Debug,O=Android,C=US"
 
-    # ── 7. Sign APK ──────────────────────────────────────────────────────────
-    cp "$WORK/app-presigned.apk" "$WORK/app-debug.apk"
-    jarsigner \
-      -keystore "$WORK/keystore/debug.keystore" \
-      -storepass android \
-      -keypass android \
-      "$WORK/app-debug.apk" \
-      androiddebugkey
+    # ── 7. Align + sign (V2 signature required for Android 11+) ─────────────
+    "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/app-presigned.apk" "$WORK/app-aligned.apk"
+    java -jar "$BUILD_TOOLS/lib/apksigner.jar" sign \
+      --ks "$WORK/keystore/debug.keystore" \
+      --ks-key-alias androiddebugkey \
+      --ks-pass pass:android \
+      --key-pass pass:android \
+      --out "$WORK/app-debug.apk" \
+      "$WORK/app-aligned.apk"
 
     # ── 8. Install artifact ──────────────────────────────────────────────────
     mkdir -p "$out"

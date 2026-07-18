@@ -57,8 +57,11 @@ in amonite.mkTask {
       -cp "$PLATFORM/android.jar" \
       -d "$WORK/android-classes" \
       "$src/android/src/dev/threedstype/app/ConnectionState.java" \
-      "$src/android/src/dev/threedstype/app/KeyboardCaptureService.java" \
-      "$src/android/src/dev/threedstype/app/SettingsActivity.java"
+      "$src/android/src/dev/threedstype/app/ChordTable.java" \
+      "$src/android/src/dev/threedstype/app/ChordEncoder.java" \
+      "$src/android/src/dev/threedstype/app/HidUdpDispatcher.java" \
+      "$src/android/src/dev/threedstype/app/SettingsActivity.java" \
+      "$src/android/src/dev/threedstype/app/KeyboardCaptureService.java"
 
     # ── 2. Compile SettingsRepository + test class on host JVM ───────────────
     javac -d "$WORK/test-classes" \
@@ -87,32 +90,25 @@ WRAPPER
       --manifest "$src/android/AndroidManifest.xml" \
       -o "$WORK/app-unsigned.apk"
 
+    # Use find to capture anonymous/inner class files (e.g. ChordTable$1.class)
     java -cp "$BUILD_TOOLS/lib/d8.jar" com.android.tools.r8.D8 \
       --lib "$PLATFORM/android.jar" \
       --output "$WORK/dex" \
-      "$WORK/android-classes/dev/threedstype/app/ConnectionState.class" \
-      "$WORK/android-classes/dev/threedstype/app/KeyboardCaptureService.class" \
-      "$WORK/android-classes/dev/threedstype/app/SettingsActivity.class"
+      $(find "$WORK/android-classes" -name "*.class")
 
     cp "$WORK/app-unsigned.apk" "$WORK/app-presigned.apk"
     (cd "$WORK/dex" && zip "$WORK/app-presigned.apk" classes.dex)
 
-    keytool -genkeypair \
-      -keystore "$WORK/keystore/debug.keystore" \
-      -alias androiddebugkey \
-      -keyalg RSA -keysize 2048 \
-      -validity 10000 \
-      -storepass android \
-      -keypass android \
-      -dname "CN=Android Debug,O=Android,C=US"
+    cp "$src/android/debug.keystore" "$WORK/keystore/debug.keystore"
 
-    cp "$WORK/app-presigned.apk" "$WORK/app-debug.apk"
-    jarsigner \
-      -keystore "$WORK/keystore/debug.keystore" \
-      -storepass android \
-      -keypass android \
-      "$WORK/app-debug.apk" \
-      androiddebugkey
+    "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/app-presigned.apk" "$WORK/app-aligned.apk"
+    java -jar "$BUILD_TOOLS/lib/apksigner.jar" sign \
+      --ks "$WORK/keystore/debug.keystore" \
+      --ks-key-alias androiddebugkey \
+      --ks-pass pass:android \
+      --key-pass pass:android \
+      --out "$WORK/app-debug.apk" \
+      "$WORK/app-aligned.apk"
 
     cp "$WORK/app-debug.apk" "$out/app-debug.apk"
   '';

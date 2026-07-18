@@ -3,8 +3,9 @@
 #include <vector>
 
 // Width in characters at which soft word-wrap occurs.
-// The 3DS top screen is 400px wide; at the default monospace font (~8px/char) that's 50 chars.
-static const int TEXT_BUFFER_WIDTH = 50;
+// The system font is proportional; wide chars at SCALE=0.65 average ~10px,
+// giving ~38 chars across the 380px usable width of the top screen.
+static const int TEXT_BUFFER_WIDTH = 48;
 
 class TextBuffer {
 public:
