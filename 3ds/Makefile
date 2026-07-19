@@ -21,7 +21,10 @@ BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
-NO_SMDH		:=	1
+ROMFS		:=	romfs
+APP_TITLE	:=	3DS Type
+APP_DESCRIPTION :=	Typewriter
+APP_AUTHOR	:=	thatbagu
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -97,6 +100,10 @@ export _3DSXDEPS	:=	$(if $(NO_SMDH),,$(OUTPUT).smdh)
 
 ifeq ($(strip $(NO_SMDH)),)
 	export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
+endif
+
+ifneq ($(strip $(ROMFS)),)
+	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
 .PHONY: all clean

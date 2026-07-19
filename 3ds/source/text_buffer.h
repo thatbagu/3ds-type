@@ -57,6 +57,13 @@ public:
         return result;
     }
 
+    void loadRaw(const std::string& text) {
+        content_.clear();
+        for (char c : text) {
+            if ((c >= 32 && c <= 126) || c == '\n') content_ += c;
+        }
+    }
+
     std::string getContent() const {
         return content_;
     }

@@ -5,25 +5,22 @@
 
 class LaunchScreen {
 public:
-    enum Action { NONE, OPEN_DRAFT, NEW_DRAFT };
+    enum Action { NONE, OPEN_DRAFT, NEW_DRAFT, DELETE_DRAFT };
 
     struct State {
         std::vector<DraftEntry> drafts;
         int cursor = 0;
     };
 
-    // Returns which action the user took this frame.
-    // On real 3DS, kDown comes from hidKeysDown(); in host tests, caller provides it.
-    // Button constants (3DS HID):
-    //   KEY_A=1, KEY_B=2, KEY_SELECT=4, KEY_START=8
-    //   KEY_DOWN=0x800, KEY_UP=0x400
+    // Navigation uses KEY_X/KEY_Y (bits 10-11) — outside chord encoding range 0x367.
+    // One-shot actions (KEY_A/B/SELECT) are safe because Android delays 150ms before
+    // entering TYPING mode, so chord packets never arrive while 3DS is in MENU state.
     static Action update(State& s, uint32_t kDown) {
-        if (kDown & 0x8) return NEW_DRAFT;                               // KEY_START
-        if ((kDown & 0x1) && !s.drafts.empty()) return OPEN_DRAFT;      // KEY_A
-        if ((kDown & 0x800) && s.cursor + 1 < (int)s.drafts.size())     // KEY_DOWN
-            s.cursor++;
-        if ((kDown & 0x400) && s.cursor > 0)                             // KEY_UP
-            s.cursor--;
+        if (kDown & 0x4) return NEW_DRAFT;
+        if ((kDown & 0x1) && !s.drafts.empty()) return OPEN_DRAFT;
+        if ((kDown & 0x2) && !s.drafts.empty()) return DELETE_DRAFT;
+        if ((kDown & 0x800) && s.cursor + 1 < (int)s.drafts.size()) s.cursor++;
+        if ((kDown & 0x400) && s.cursor > 0) s.cursor--;
         return NONE;
     }
 };

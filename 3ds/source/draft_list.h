@@ -8,7 +8,8 @@
 
 struct DraftEntry {
     std::string name;
-    std::time_t mtime = 0;
+    std::time_t mtime;
+    DraftEntry(std::string n, std::time_t t) : name(std::move(n)), mtime(t) {}
 };
 
 class DraftList {
@@ -20,7 +21,7 @@ public:
         struct dirent* ent;
         while ((ent = readdir(d)) != nullptr) {
             std::string name(ent->d_name);
-            if (name.size() < 4 || name.substr(name.size()-4) != ".txt") continue;
+            if (name.size() < 3 || name.substr(name.size()-3) != ".md") continue;
             std::string path = dir + "/" + name;
             struct stat st;
             if (stat(path.c_str(), &st) == 0) {
