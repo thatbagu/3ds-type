@@ -210,9 +210,8 @@ public class KeyboardCaptureService extends AccessibilityService {
                 break;
         }
 
-        if (phase != Phase.IDLE)
-            HidUdpDispatcher.sendRaw(
-                phase == Phase.CHORD ? active.packet : HidUdpDispatcher.RELEASE, ip, port);
+        HidUdpDispatcher.sendRaw(
+            phase == Phase.CHORD ? active.packet : HidUdpDispatcher.RELEASE, ip, port);
     }
 
     // --- input handling ---
