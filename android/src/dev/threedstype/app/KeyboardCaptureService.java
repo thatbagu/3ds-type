@@ -32,6 +32,7 @@ public class KeyboardCaptureService extends AccessibilityService {
     private static final int HID_A      = 0x001;
     private static final int HID_B      = 0x002;
     private static final int HID_SELECT = 0x004;
+    private static final int HID_START  = 0x008;
     private static final int HID_X      = 0x400;
     private static final int HID_Y      = 0x800;
 
@@ -296,12 +297,27 @@ public class KeyboardCaptureService extends AccessibilityService {
                         mainHandler.postDelayed(this::enterTyping, TYPING_DELAY_MS);
                     }
                     break;
-                case KeyEvent.KEYCODE_N:
-                    queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_SELECT), NAV_MS));
+                case KeyEvent.KEYCODE_N: {
+                    // Generate timestamp now; encode and send to 3DS so both sides
+                    // end up with the exact same filename.
+                    String ts = new java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
+                        .format(new java.util.Date());
+                    saveFilename    = ts + ".md";
                     pendingNewDraft = true;
-                    pendingDelete = false;
-                    mainHandler.postDelayed(this::enterTyping, TYPING_DELAY_MS);
+                    pendingDelete   = false;
+                    // Protocol: START, then timestamp chars, then SELECT.
+                    queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_START), NAV_MS));
+                    for (char c : ts.toCharArray()) {
+                        int bm = ChordEncoder.encode(c);
+                        if (bm != 0) queue.offer(new Chord(HidUdpDispatcher.buildPacket(bm), CHORD_MS));
+                    }
+                    queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_SELECT), NAV_MS));
+                    // Delay until the full sequence has been sent + 3DS processes SELECT.
+                    int seqMs = (GAP_MS + NAV_MS) + ts.length() * (GAP_MS + CHORD_MS)
+                                + (GAP_MS + NAV_MS) + 200;
+                    mainHandler.postDelayed(this::enterTyping, seqMs);
                     break;
+                }
                 case KeyEvent.KEYCODE_D:
                     queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_B), NAV_MS));
                     pendingDelete = true;
@@ -348,8 +364,7 @@ public class KeyboardCaptureService extends AccessibilityService {
         if (mode != AppMode.MENU) return;
         mirror.setLength(0);
         if (pendingNewDraft) {
-            saveFilename = new java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
-                .format(new java.util.Date()) + ".md";
+            // saveFilename was already set (and sent to 3DS) when 'n' was pressed.
         } else {
             // Look up filename by cursor position in Android-side draft list.
             saveFilename = (pendingCursor < menuDraftList.size())

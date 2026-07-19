@@ -58,7 +58,12 @@ int main(int argc, char* argv[]) {
                 draftDirty   = false;
                 appState = TYPING;
             } else if (action == LaunchScreen::NEW_DRAFT) {
-                currentDraftName = DraftManager::makeFilename();
+                if (!menuState.pendingName.empty()) {
+                    currentDraftName = menuState.pendingName + ".md";
+                    menuState.pendingName.clear();
+                } else {
+                    currentDraftName = DraftManager::makeFilename();
+                }
                 currentDraftPath = std::string(DRAFT_DIR) + "/" + currentDraftName;
                 buffer = TextBuffer();
                 scrollOffset = 0;
