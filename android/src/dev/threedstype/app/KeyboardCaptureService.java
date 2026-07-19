@@ -377,6 +377,8 @@ public class KeyboardCaptureService extends AccessibilityService {
                 else       draftRaf.seek(draftRaf.length()); // append after existing content
             } catch (Exception e) {
                 Log.w(TAG, "stream open failed: " + e.getMessage());
+                draftRaf = null;
+                mainHandler.post(() -> toast("No storage permission - drafts won't save"));
             }
         });
         setKeyboardWakeup(false);
