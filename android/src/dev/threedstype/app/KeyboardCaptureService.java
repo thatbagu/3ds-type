@@ -464,14 +464,7 @@ public class KeyboardCaptureService extends AccessibilityService {
             return "!@#$%^&*()".charAt(kc - KeyEvent.KEYCODE_0);
         }
         if (kc == KeyEvent.KEYCODE_SPACE) return ' ';
-        switch (kc) {
-            case KeyEvent.KEYCODE_PERIOD:     return '.';
-            case KeyEvent.KEYCODE_COMMA:      return ',';
-            case KeyEvent.KEYCODE_MINUS:      return '-';
-            case KeyEvent.KEYCODE_EQUALS:     return '=';
-            case KeyEvent.KEYCODE_APOSTROPHE: return '\'';
-            default:                          return 0;
-        }
+        return 0; // all punctuation falls through to event.getUnicodeChar(meta) for shift-aware mapping
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
