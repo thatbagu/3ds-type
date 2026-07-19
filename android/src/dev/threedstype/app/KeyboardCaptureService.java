@@ -14,6 +14,11 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -65,17 +70,21 @@ public class KeyboardCaptureService extends AccessibilityService {
     // Sysfs path for the physical keyboard's wakeup control file.
     // Detected from the first key event; null until detected.
     private volatile String kbWakeupPath = null;
+    private SharedPreferences.OnSharedPreferenceChangeListener prefsListener;
 
     private volatile String ip        = null;
     private volatile int    port      = SettingsActivity.DEFAULT_PORT;
     private volatile String draftPath = SettingsActivity.DEFAULT_DRAFT_PATH;
 
     private final StringBuilder mirror = new StringBuilder();
-    private String  saveFilename    = "current_draft.md";
-    private boolean pendingNewDraft  = false;
-    // Set when 'd' is pressed in MENU; cleared on confirm or cancel.
-    private boolean pendingDelete    = false;
-    private String  pendingDeleteFile = null;
+    private String       saveFilename     = "current_draft.md";
+    private boolean      pendingNewDraft  = false;
+    private boolean      pendingDelete    = false;
+    private String       pendingDeleteFile = null;
+    // Android-side mirror of the 3DS draft list (sorted newest-first, same as 3DS).
+    private List<String> menuDraftList    = new ArrayList<>();
+    private int          menuCursor       = 0;
+    private int          pendingCursor    = 0;
 
     @Override
     protected void onServiceConnected() {
@@ -89,10 +98,11 @@ public class KeyboardCaptureService extends AccessibilityService {
         executor.scheduleAtFixedRate(this::tick, 0, 16, TimeUnit.MILLISECONDS);
         // Start persistent root shell eagerly so first TYPING mode has no su latency.
         rootExecutor.execute(this::ensureRootShell);
-        // Load prefs once; refresh on change via listener.
+        // Load prefs once; keep a strong reference to the listener so it isn't GC'd.
         SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS, MODE_PRIVATE);
         loadPrefs(prefs);
-        prefs.registerOnSharedPreferenceChangeListener((p, k) -> loadPrefs(p));
+        prefsListener = (p, k) -> loadPrefs(p);
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener);
     }
 
     private void loadPrefs(SharedPreferences prefs) {
@@ -230,6 +240,8 @@ public class KeyboardCaptureService extends AccessibilityService {
             switch (mode) {
                 case OFF:
                     mode = AppMode.MENU;
+                    menuCursor = 0;
+                    refreshDraftList();
                     toast("-- MENU --");
                     break;
                 case MENU:
@@ -244,6 +256,8 @@ public class KeyboardCaptureService extends AccessibilityService {
                     if (ip != null && !ip.isEmpty())
                         queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_X | HID_Y), NAV_MS));
                     mode = AppMode.MENU;
+                    menuCursor = 0;
+                    refreshDraftList();
                     toast("-- MENU --");
                     break;
             }
@@ -260,12 +274,14 @@ public class KeyboardCaptureService extends AccessibilityService {
                 case KeyEvent.KEYCODE_K:
                 case KeyEvent.KEYCODE_I:
                     queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_X), NAV_MS));
+                    if (menuCursor > 0) menuCursor--;
                     break;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                 case KeyEvent.KEYCODE_PAGE_DOWN:
                 case KeyEvent.KEYCODE_J:
                 case KeyEvent.KEYCODE_L:
                     queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_Y), NAV_MS));
+                    menuCursor++;
                     break;
                 case KeyEvent.KEYCODE_ENTER:
                 case KeyEvent.KEYCODE_NUMPAD_ENTER:
@@ -276,6 +292,7 @@ public class KeyboardCaptureService extends AccessibilityService {
                         pendingDeleteFile = null;
                     } else {
                         pendingNewDraft = false;
+                        pendingCursor = menuCursor;
                         mainHandler.postDelayed(this::enterTyping, TYPING_DELAY_MS);
                     }
                     break;
@@ -288,7 +305,8 @@ public class KeyboardCaptureService extends AccessibilityService {
                 case KeyEvent.KEYCODE_D:
                     queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_B), NAV_MS));
                     pendingDelete = true;
-                    pendingDeleteFile = saveFilename;
+                    pendingDeleteFile = (pendingCursor < menuDraftList.size())
+                        ? menuDraftList.get(menuCursor) : saveFilename;
                     break;
                 default:
                     break;
@@ -329,13 +347,47 @@ public class KeyboardCaptureService extends AccessibilityService {
     private void enterTyping() {
         if (mode != AppMode.MENU) return;
         mirror.setLength(0);
-        saveFilename = pendingNewDraft
-            ? new java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss").format(new java.util.Date()) + ".md"
-            : "current_draft.md";
+        if (pendingNewDraft) {
+            saveFilename = new java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
+                .format(new java.util.Date()) + ".md";
+        } else {
+            // Look up filename by cursor position in Android-side draft list.
+            saveFilename = (pendingCursor < menuDraftList.size())
+                ? menuDraftList.get(pendingCursor)
+                : new java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
+                    .format(new java.util.Date()) + ".md";
+            // Pre-load existing content so edits accumulate correctly.
+            File existing = new File(draftPath, saveFilename);
+            if (existing.exists()) {
+                try {
+                    byte[] bytes = Files.readAllBytes(existing.toPath());
+                    mirror.append(new String(bytes, "UTF-8"));
+                } catch (Exception e) {
+                    Log.w(TAG, "pre-load failed: " + e.getMessage());
+                }
+            }
+        }
         setKeyboardWakeup(false);
         mode = AppMode.TYPING;
         if (!wakeLock.isHeld()) wakeLock.acquire();
         toast("-- TYPING --");
+    }
+
+    private void refreshDraftList() {
+        final String path = draftPath;
+        saveExecutor.execute(() -> {
+            File dir = new File(path);
+            List<String> names = new ArrayList<>();
+            if (dir.isDirectory()) {
+                String[] files = dir.list();
+                if (files != null) {
+                    for (String f : files)
+                        if (f.endsWith(".md") || f.endsWith(".txt")) names.add(f);
+                    Collections.sort(names, Collections.reverseOrder());
+                }
+            }
+            menuDraftList = names;
+        });
     }
 
     private void leaveTyping() {
@@ -360,8 +412,11 @@ public class KeyboardCaptureService extends AccessibilityService {
                 try (FileOutputStream fos = new FileOutputStream(f, false)) {
                     fos.write(content.getBytes("UTF-8"));
                 }
+                Log.i(TAG, "saved " + f.getAbsolutePath());
+                toast("Saved: " + filename);
             } catch (Exception e) {
                 Log.w(TAG, "save failed: " + e.getMessage());
+                toast("Save failed: " + e.getMessage());
             }
         });
     }
