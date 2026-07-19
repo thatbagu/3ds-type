@@ -108,11 +108,19 @@ public:
         C2D_TargetClear(top_, C2D_Color32(0x10, 0x10, 0x10, 0xFF));
         C2D_SceneBegin(top_);
 
+        // Build display lines with blinking cursor appended to the last line.
+        std::vector<std::string> display = lines;
+        bool cursorOn = (frame_++ / 30) % 2 == 0;
+        if (cursorOn) {
+            if (display.empty()) display.push_back("|");
+            else display.back() += "|";
+        }
+
         float y = MARGIN;
-        for (int i = scrollOffset; i < (int)lines.size(); i++) {
+        for (int i = scrollOffset; i < (int)display.size(); i++) {
             if (y + LINE_H > TOP_HEIGHT - MARGIN) break;
-            if (!lines[i].empty())
-                drawText(lines[i].c_str(), MARGIN, y + LINE_H,
+            if (!display[i].empty())
+                drawText(display[i].c_str(), MARGIN, y + LINE_H,
                          SCALE, C2D_Color32(0xE0, 0xE0, 0xD0, 0xFF));
             y += LINE_H;
         }
@@ -141,6 +149,7 @@ private:
     C3D_RenderTarget* bot_     = nullptr;
     C2D_Font          font_    = nullptr;
     C2D_TextBuf       textBuf_ = nullptr;
+    uint32_t          frame_   = 0;
 
     void drawText(const char* str, float x, float y, float scale, uint32_t color) {
         C2D_Text t;

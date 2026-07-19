@@ -117,8 +117,13 @@ int main(int argc, char* argv[]) {
             if (process_hid_frame(kDown, buffer)) draftDirty = true;
 
             auto lines = buffer.getLines();
+            // Auto-scroll to keep cursor (last line) visible; manual Y/X overrides.
+            static const int LINES_PER_SCREEN = (TypewriterRenderer::TOP_HEIGHT - (int)TypewriterRenderer::MARGIN * 2) / (int)TypewriterRenderer::LINE_H;
+            int autoScroll = (int)lines.size() - LINES_PER_SCREEN;
+            if (autoScroll > scrollOffset) scrollOffset = autoScroll;
             int maxScroll = (int)lines.size() > 0 ? (int)lines.size() - 1 : 0;
             if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+            if (scrollOffset < 0) scrollOffset = 0;
 
             renderer.render(lines, 0, false, lastKDown, 0,
                             scrollOffset, lastDecoded, currentDraftName);
