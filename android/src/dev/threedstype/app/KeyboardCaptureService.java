@@ -12,9 +12,7 @@ import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.Toast;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.OutputStream;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -77,7 +75,7 @@ public class KeyboardCaptureService extends AccessibilityService {
     private volatile int    port      = SettingsActivity.DEFAULT_PORT;
     private volatile String draftPath = SettingsActivity.DEFAULT_DRAFT_PATH;
 
-    private final StringBuilder mirror = new StringBuilder();
+    private java.io.RandomAccessFile draftRaf = null;
     private String       saveFilename     = "current_draft.md";
     private boolean      pendingNewDraft  = false;
     private boolean      pendingDelete    = false;
@@ -334,10 +332,10 @@ public class KeyboardCaptureService extends AccessibilityService {
         if (ip == null || ip.isEmpty()) return false;
 
         if (keyCode == KeyEvent.KEYCODE_DEL) {
-            if (mirror.length() > 0) mirror.deleteCharAt(mirror.length() - 1);
+            streamBackspace();
             queue.offer(new Chord(HidUdpDispatcher.buildPacket(ChordEncoder.encode(8)), CHORD_MS));
         } else if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-            mirror.append('\n');
+            streamWrite((byte) '\n');
             queue.offer(new Chord(HidUdpDispatcher.buildPacket(ChordEncoder.encode(10)), CHORD_MS));
         } else {
             int unicode = keycodeToUnicode(keyCode, event.getMetaState());
@@ -350,7 +348,7 @@ public class KeyboardCaptureService extends AccessibilityService {
             if (unicode > 0) {
                 int bitmask = ChordEncoder.encode(unicode);
                 if (bitmask != 0) {
-                    if (unicode >= 32 && unicode <= 126) mirror.append((char) unicode);
+                    if (unicode >= 32 && unicode <= 126) streamWrite((byte) unicode);
                     queue.offer(new Chord(HidUdpDispatcher.buildPacket(bitmask), CHORD_MS));
                 }
             }
@@ -362,26 +360,25 @@ public class KeyboardCaptureService extends AccessibilityService {
 
     private void enterTyping() {
         if (mode != AppMode.MENU) return;
-        mirror.setLength(0);
-        if (pendingNewDraft) {
-            // saveFilename was already set (and sent to 3DS) when 'n' was pressed.
-        } else {
-            // Look up filename by cursor position in Android-side draft list.
+        if (!pendingNewDraft) {
             saveFilename = (pendingCursor < menuDraftList.size())
                 ? menuDraftList.get(pendingCursor)
                 : new java.text.SimpleDateFormat("yyyyMMdd'T'HHmmss")
                     .format(new java.util.Date()) + ".md";
-            // Pre-load existing content so edits accumulate correctly.
-            File existing = new File(draftPath, saveFilename);
-            if (existing.exists()) {
-                try {
-                    byte[] bytes = Files.readAllBytes(existing.toPath());
-                    mirror.append(new String(bytes, "UTF-8"));
-                } catch (Exception e) {
-                    Log.w(TAG, "pre-load failed: " + e.getMessage());
-                }
-            }
         }
+        final String  path    = draftPath;
+        final String  fname   = saveFilename;
+        final boolean isNew   = pendingNewDraft;
+        saveExecutor.submit(() -> {
+            try {
+                new File(path).mkdirs();
+                draftRaf = new java.io.RandomAccessFile(new File(path, fname), "rw");
+                if (isNew) draftRaf.setLength(0);
+                else       draftRaf.seek(draftRaf.length()); // append after existing content
+            } catch (Exception e) {
+                Log.w(TAG, "stream open failed: " + e.getMessage());
+            }
+        });
         setKeyboardWakeup(false);
         mode = AppMode.TYPING;
         if (!wakeLock.isHeld()) wakeLock.acquire();
@@ -407,32 +404,33 @@ public class KeyboardCaptureService extends AccessibilityService {
 
     private void leaveTyping() {
         setKeyboardWakeup(true);
-        scheduleSave();
-        // pendingDeleteFile tracks the last saved file so delete knows what to remove.
         pendingDeleteFile = saveFilename;
         if (wakeLock.isHeld()) wakeLock.release();
-    }
-
-    // --- save / delete ---
-
-    private void scheduleSave() {
-        final String content  = mirror.toString();
-        final String path     = draftPath;
-        final String filename = saveFilename;
         saveExecutor.submit(() -> {
             try {
-                File dir = new File(path);
-                if (!dir.exists()) dir.mkdirs();
-                File f = new File(dir, filename);
-                try (FileOutputStream fos = new FileOutputStream(f, false)) {
-                    fos.write(content.getBytes("UTF-8"));
-                }
-                Log.i(TAG, "saved " + f.getAbsolutePath());
-                toast("Saved: " + filename);
+                if (draftRaf != null) { draftRaf.close(); draftRaf = null; }
             } catch (Exception e) {
-                Log.w(TAG, "save failed: " + e.getMessage());
-                toast("Save failed: " + e.getMessage());
+                Log.w(TAG, "stream close failed: " + e.getMessage());
             }
+        });
+    }
+
+    // --- stream helpers ---
+
+    private void streamWrite(byte b) {
+        saveExecutor.submit(() -> {
+            try { if (draftRaf != null) draftRaf.write(b); }
+            catch (Exception e) { Log.w(TAG, "stream write failed: " + e.getMessage()); }
+        });
+    }
+
+    private void streamBackspace() {
+        saveExecutor.submit(() -> {
+            try {
+                if (draftRaf == null) return;
+                long pos = draftRaf.getFilePointer();
+                if (pos > 0) { draftRaf.setLength(pos - 1); draftRaf.seek(pos - 1); }
+            } catch (Exception e) { Log.w(TAG, "stream backspace failed: " + e.getMessage()); }
         });
     }
 
