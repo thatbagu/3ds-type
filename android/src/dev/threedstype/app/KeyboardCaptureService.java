@@ -309,7 +309,7 @@ public class KeyboardCaptureService extends AccessibilityService {
                         int bm = ChordEncoder.encode(c);
                         if (bm != 0) queue.offer(new Chord(HidUdpDispatcher.buildPacket(bm), CHORD_MS));
                     }
-                    queue.offer(new Chord(HidUdpDispatcher.buildPacket(HID_SELECT), NAV_MS));
+                    queue.offer(new Chord(HidUdpDispatcher.buildPacket(0x080), NAV_MS)); // DDOWN: end-of-filename, safe (outside chord mask 0x367)
                     // Delay until the full sequence has been sent + 3DS processes SELECT.
                     int seqMs = (GAP_MS + NAV_MS) + ts.length() * (GAP_MS + CHORD_MS)
                                 + (GAP_MS + NAV_MS) + 200;

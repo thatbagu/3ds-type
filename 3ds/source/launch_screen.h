@@ -20,7 +20,7 @@ public:
     // filename stem so both sides end up with the exact same name.
     static Action update(State& s, uint32_t kDown) {
         if (s.receivingName) {
-            if (kDown & 0x004) {        // SELECT — filename complete, create draft
+            if (kDown & 0x080) {        // DDOWN — end-of-filename marker (0x080 is outside chord mask 0x367)
                 s.receivingName = false;
                 return NEW_DRAFT;
             }
